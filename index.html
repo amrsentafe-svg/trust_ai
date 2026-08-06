@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>نظام إدارة الانتقالات</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: var(--tg-theme-bg-color, #f3f4f6);
+            --text-color: var(--tg-theme-text-color, #111827);
+            --hint-color: var(--tg-theme-hint-color, #6b7280);
+            --button-color: var(--tg-theme-button-color, #3b82f6);
+            --button-text-color: var(--tg-theme-button-text-color, #ffffff);
+            --secondary-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: system-ui, -apple-system, sans-serif;
+            padding: 16px;
+            max-width: 440px;
+            margin: 0 auto;
+            min-height: 100vh;
+            position: relative;
+            -webkit-font-smoothing: antialiased;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(107, 114, 128, 0.2);
+        }
+        .user-name { font-size: 1.25rem; font-weight: 700; }
+        .user-phone { font-size: 0.75rem; color: var(--hint-color); margin-top: 4px; }
+        .status-badge {
+            background-color: #dcfce7;
+            color: #166534;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 9999px;
+        }
+        .form-group { margin-bottom: 20px; position: relative; }
+        label { display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: 6px; }
+        .tg-input {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid var(--hint-color);
+            background-color: var(--secondary-bg);
+            color: var(--text-color);
+            font-size: 0.875rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .tg-input:focus { border-color: var(--button-color); }
+        .tg-dropdown {
+            position: absolute;
+            top: 100%; right: 0; left: 0;
+            background-color: var(--secondary-bg);
+            border: 1px solid var(--hint-color);
+            border-radius: 12px;
+            max-height: 192px;
+            overflow-y: auto;
+            z-index: 20;
+            margin-top: 4px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .tg-dropdown-item {
+            padding: 14px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        .tg-dropdown-item:last-child { border-bottom: none; }
+        .tg-dropdown-item:hover { background-color: var(--bg-color); }
+        .tg-button {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: none;
+            background-color: var(--button-color);
+            color: var(--button-text-color);
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            margin-top: 16px;
+        }
+        .hidden { display: none !important; }
+        .reason-label { color: #ea580c; }
+        .reason-textarea { border-color: #fb923c; }
+        .modal {
+            position: fixed; inset: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            display: flex; align-items: center; justify-content: center;
+            padding: 16px; z-index: 50;
+        }
+        .modal-card {
+            background-color: var(--secondary-bg);
+            padding: 24px; border-radius: 16px;
+            width: 100%; max-width: 384px;
+            text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1 class="user-name" id="ui-user-name">مرحباً</h1>
+            <p class="user-phone" id="ui-user-phone">جاري تحميل البيانات...</p>
+        </div>
+        <div class="status-badge">متصل 🟢</div>
+    </header>
+
+    <main id="main-form">
+        <div class="form-group">
+            <label>نقطة البداية (من)</label>
+            <input type="text" id="input-from" class="tg-input" placeholder="اكتب أول حرف للبحث..." autocomplete="off">
+            <div id="dropdown-from" class="tg-dropdown hidden"></div>
+        </div>
+
+        <div class="form-group">
+            <label>نقطة النهاية (إلى)</label>
+            <input type="text" id="input-to" class="tg-input" placeholder="اكتب أول حرف للبحث..." autocomplete="off">
+            <div id="dropdown-to" class="tg-dropdown hidden"></div>
+        </div>
+
+        <div class="form-group">
+            <label>التكلفة الفعلية (جنيه)</label>
+            <input type="number" id="input-cost" class="tg-input" placeholder="مثال: 75.00">
+        </div>
+
+        <div id="reason-container" class="form-group hidden">
+            <label class="reason-label" id="reason-label">سبب زيادة الأجرة 🟡</label>
+            <textarea id="input-reason" class="tg-input reason-textarea" style="height: 80px;" placeholder="عفواً السعر مرتفع، يرجى كتابة السبب هنا..."></textarea>
+        </div>
+
+        <button id="fallback-submit-btn" onclick="submitTripData()" class="tg-button hidden">
+            تسجيل بيانات الرحلة
+        </button>
+    </main>
+
+    <div id="phone-modal" class="modal hidden">
+        <div class="modal-card">
+            <div style="font-size: 3rem; margin-bottom: 12px;">📱</div>
+            <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 8px;">تأكيد الهوية</h2>
+            <p style="font-size: 0.75rem; color: var(--hint-color); margin-bottom: 24px;">يرجى إدخال رقم هاتفك لربط حسابك بالنظام.</p>
+            <input type="tel" id="input-phone" class="tg-input" style="text-align: center; font-size: 1.125rem; font-weight: 700; margin-bottom: 16px;" placeholder="01xxxxxxxxx" autocomplete="tel">
+            <button onclick="registerPhone()" class="tg-button">تأكيد وحفظ البيانات</button>
+        </div>
+    </div>
+
+    <script>
+        const N8N_BASE_URL = "https://ai-trust.me/webhook"; 
+
+        function safeGetStorage(key) {
+            try { return localStorage.getItem(key); } catch (e) { return null; }
+        }
+        function safeSetStorage(key, value) {
+            try { localStorage.setItem(key, value); } catch (e) {}
+        }
+        function safeRemoveStorage(key) {
+            try { localStorage.removeItem(key); } catch (e) {}
+        }
+
+        const tg = window.Telegram?.WebApp || {};
+        if (tg.ready) tg.ready();
+        if (tg.expand) tg.expand();
+
+        const tgUser = tg.initDataUnsafe?.user || { id: "test_user", first_name: "مستخدم تجريبي" };
+        let userPhone = safeGetStorage(`phone_${tgUser.id}`);
+        let approvedLocations = ["السلام", "التجمع الخامس", "مدينة نصر", "شبرا"];
+
+        const els = {
+            userName: document.getElementById('ui-user-name'),
+            userPhone: document.getElementById('ui-user-phone'),
+            phoneModal: document.getElementById('phone-modal'),
+            mainForm: document.getElementById('main-form'),
+            inputFrom: document.getElementById('input-from'),
+            inputTo: document.getElementById('input-to'),
+            dropdownFrom: document.getElementById('dropdown-from'),
+            dropdownTo: document.getElementById('dropdown-to'),
+            inputCost: document.getElementById('input-cost'),
+            inputReason: document.getElementById('input-reason'),
+            reasonContainer: document.getElementById('reason-container'),
+            fallbackBtn: document.getElementById('fallback-submit-btn')
+        };
+
+        function safeAlert(message) {
+            if (tg.showAlert) {
+                try { tg.showAlert(message); } catch (e) { alert(message); }
+            } else { alert(message); }
+        }
+
+        // تشغيل فوري للواجهة بدون انتظار أي شاشة تحميل (0ms Delay)
+        function initAppInstant() {
+            if (els.userName) els.userName.innerText = tgUser.first_name || "مستخدم تجريبي";
+            
+            if (userPhone) {
+                showMainApp();
+            } else {
+                showPhoneModal();
+            }
+
+            // تحديث البيانات في الخلفية بدون حجب الواجهة (Background Sync)
+            fetchInitDataInBackground();
+        }
+
+        async function fetchInitDataInBackground() {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+                const response = await fetch(`${N8N_BASE_URL}/init`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_id: tgUser.id }),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.locations && data.locations.length > 0) {
+                        approvedLocations = data.locations;
+                    }
+                    if (data.registered && data.phone) {
+                        userPhone = data.phone;
+                        safeSetStorage(`phone_${tgUser.id}`, userPhone);
+                        showMainApp();
+                    }
+                }
+            } catch (error) {
+                // في حالة بطء السيرفر يظل التطبيق شغالاً بالبيانات المحلية المحفوظة
+            }
+        }
+
+        function showPhoneModal() {
+            if (els.phoneModal) els.phoneModal.classList.remove('hidden');
+        }
+
+        function showMainApp() {
+            if (els.phoneModal) els.phoneModal.classList.add('hidden');
+            if (els.userPhone) els.userPhone.innerText = `رقم الهاتف: ${userPhone || ''}`;
+            
+            if (tg.initData && tg.MainButton) {
+                setupMainButton();
+            } else {
+                els.fallbackBtn?.classList.remove('hidden');
+            }
+        }
+
+        async function registerPhone() {
+            const phoneInput = document.getElementById('input-phone').value.trim();
+            if (!phoneInput || phoneInput.length < 10) { safeAlert("❌ يرجى إدخال رقم هاتف صحيح"); return; }
+            if (tg.MainButton) tg.MainButton.setText('جاري الحفظ...').showProgress(true).show();
+
+            try {
+                const response = await fetch(`${N8N_BASE_URL}/register-user`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_id: tgUser.id, phone: phoneInput, init_data: tg.initData })
+                });
+                if (response.ok) {
+                    userPhone = phoneInput;
+                    safeSetStorage(`phone_${tgUser.id}`, userPhone);
+                    showMainApp();
+                } else { safeAlert("❌ فشل حفظ الرقم."); }
+            } catch (error) { safeAlert("❌ حدث خطأ في الاتصال."); }
+            finally { if (tg.MainButton) tg.MainButton.hideProgress().hide(); }
+        }
+
+        function setupAutocomplete(inputEl, dropdownEl) {
+            if (!inputEl || !dropdownEl) return;
+            inputEl.addEventListener('input', () => {
+                const query = inputEl.value.trim().toLowerCase();
+                dropdownEl.innerHTML = '';
+                if (!query) { dropdownEl.classList.add('hidden'); return; }
+
+                const matches = approvedLocations.filter(loc => loc.toLowerCase().includes(query));
+                if (matches.length > 0) {
+                    matches.forEach(match => {
+                        const div = document.createElement('div');
+                        div.className = 'tg-dropdown-item';
+                        div.innerHTML = `📍 ${match}`;
+                        div.onclick = () => { inputEl.value = match; dropdownEl.classList.add('hidden'); };
+                        dropdownEl.appendChild(div);
+                    });
+                    dropdownEl.classList.remove('hidden');
+                } else { dropdownEl.classList.add('hidden'); }
+            });
+            document.addEventListener('click', (e) => {
+                if (e.target !== inputEl && e.target !== dropdownEl) dropdownEl.classList.add('hidden');
+            });
+        }
+
+        function setupMainButton() {
+            if (tg.MainButton) {
+                tg.MainButton.setText('تسجيل بيانات الرحلة');
+                tg.MainButton.offClick(submitTripData);
+                tg.MainButton.onClick(submitTripData);
+                tg.MainButton.show();
+            }
+        }
+
+        async function submitTripData() {
+            const fromVal = els.inputFrom.value.trim();
+            const toVal = els.inputTo.value.trim();
+            const costVal = els.inputCost.value.trim();
+            const reasonVal = els.inputReason.value.trim();
+
+            if (!fromVal || !toVal || !costVal) { safeAlert("⚠️ يرجى ملء جميع الحقول المطلوبة."); return; }
+            if (!approvedLocations.includes(fromVal) || !approvedLocations.includes(toVal)) { safeAlert("⚠️ اختر من القائمة فقط."); return; }
+
+            if (tg.MainButton) tg.MainButton.setText('جاري التسجيل...').showProgress(true);
+
+            try {
+                const response = await fetch(`${N8N_BASE_URL}/add-trip`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        telegram_id: tgUser.id, phone: userPhone,
+                        from_location: fromVal, to_location: toVal,
+                        cost: parseFloat(costVal), reason: reasonVal, init_data: tg.initData
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === "reason_required") {
+                    safeAlert(result.message);
+                    els.reasonContainer.classList.remove('hidden');
+                    els.inputReason.focus();
+                    if (tg.MainButton) tg.MainButton.setText('إعادة الإرسال بعد إضافة السبب').hideProgress();
+                    return;
+                }
+
+                safeAlert(result.message || "✅ تم تسجيل الرحلة بنجاح!");
+                els.inputFrom.value = '';
+                els.inputTo.value = '';
+                els.inputCost.value = '';
+                els.inputReason.value = '';
+                els.reasonContainer.classList.add('hidden');
+
+            } catch (error) {
+                safeAlert("❌ حدث خطأ أثناء الإرسال. تأكد من الإنترنت.");
+            } finally {
+                if (tg.MainButton && tg.MainButton.text !== 'إعادة الإرسال بعد إضافة السبب') {
+                    tg.MainButton.setText('تسجيل بيانات الرحلة').hideProgress();
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setupAutocomplete(els.inputFrom, els.dropdownFrom);
+            setupAutocomplete(els.inputTo, els.dropdownTo);
+            initAppInstant();
+        });
+    </script>
+</body>
+</html>
